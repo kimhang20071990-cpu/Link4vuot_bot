@@ -1,141 +1,185 @@
 import telebot
 import json
-import random
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+import time
+from telebot import types
 
-TOKEN = "TOKEN_BOT"
+TOKEN = "BOT_TOKEN"
 ADMIN_ID = 123456789
 
 bot = telebot.TeleBot(TOKEN)
 
-TASK_LINK = "https://example.com"
+# load data
+def load_users():
+    try:
+        with open("users.json") as f:
+            return json.load(f)
+    except:
+        return {}
 
-try:
-    with open("users.json","r") as f:
-        users = json.load(f)
-except:
-    users = {}
-
-def save():
+def save_users(data):
     with open("users.json","w") as f:
-        json.dump(users,f)
+        json.dump(data,f)
 
-def menu():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add("👤 Tài khoản","🔗 Nhiệm vụ")
-    kb.add("👥 Giới thiệu","💰 Kiếm tiền")
-    kb.add("📅 Điểm danh")
-    return kb
+def load_tasks():
+    try:
+        with open("tasks.json") as f:
+            return json.load(f)
+    except:
+        return {}
 
+def save_tasks(data):
+    with open("tasks.json","w") as f:
+        json.dump(data,f)
+
+users = load_users()
+tasks = load_tasks()
+
+# start
 @bot.message_handler(commands=['start'])
-def start(m):
-    uid = str(m.from_user.id)
+def start(message):
+
+    uid = str(message.from_user.id)
 
     if uid not in users:
         users[uid] = {
             "coin":0,
-            "ref":0,
-            "checkin":False
+            "last_task":0,
+            "ref":0
         }
-        save()
+        save_users(users)
 
-    bot.send_message(
-        m.chat.id,
-        "Chào mừng đến bot kiếm tiền 💰",
-        reply_markup=menu()
-    )
+    menu = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    menu.add("👤 Tài khoản","📋 Nhiệm vụ")
+    menu.add("👥 Giới thiệu","💸 Rút tiền")
 
+    bot.send_message(uid,"Chào mừng đến bot kiếm tiền",reply_markup=menu)
+
+# tài khoản
 @bot.message_handler(func=lambda m: m.text=="👤 Tài khoản")
-def account(m):
+def account(message):
 
-    uid=str(m.from_user.id)
+    uid=str(message.from_user.id)
 
     coin=users[uid]["coin"]
-    ref=users[uid]["ref"]
 
-    text=f"""
-👤 Tài khoản
+    bot.send_message(uid,f"""
+👤 ID: {uid}
+💰 Coin: {coin}
+""")
 
-ID: {uid}
-💰 Xu: {coin}
-👥 Đã mời: {ref}
-"""
+# nhiệm vụ
+@bot.message_handler(func=lambda m: m.text=="📋 Nhiệm vụ")
+def task_list(message):
 
-    bot.send_message(m.chat.id,text)
-
-@bot.message_handler(func=lambda m: m.text=="👥 Giới thiệu")
-def ref(m):
-
-    uid=m.from_user.id
-
-    link=f"https://t.me/YOURBOT?start={uid}"
-
-    bot.send_message(
-        m.chat.id,
-        f"Link mời bạn:\n{link}\n\nMỗi người +100 xu"
-    )
-
-@bot.message_handler(func=lambda m: m.text=="📅 Điểm danh")
-def checkin(m):
-
-    uid=str(m.from_user.id)
-
-    if users[uid]["checkin"]:
-        bot.send_message(m.chat.id,"Bạn đã điểm danh hôm nay")
+    if len(tasks)==0:
+        bot.send_message(message.chat.id,"Chưa có nhiệm vụ")
         return
 
-    users[uid]["coin"]+=50
-    users[uid]["checkin"]=True
+    for tid in tasks:
 
-    save()
+        link=tasks[tid]["link"]
+        reward=tasks[tid]["reward"]
 
-    bot.send_message(m.chat.id,"Điểm danh thành công +50 xu")
+        markup=types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Làm nhiệm vụ",url=link))
+        markup.add(types.InlineKeyboardButton("Gửi ảnh",callback_data="task_"+tid))
 
-@bot.message_handler(func=lambda m: m.text=="🔗 Nhiệm vụ")
-def task(m):
+        bot.send_message(message.chat.id,f"""
+Nhiệm vụ #{tid}
 
-    bot.send_message(
-        m.chat.id,
-        f"Nhiệm vụ hôm nay:\n{TASK_LINK}\n\nSau khi vượt link gửi ảnh cho bot."
-    )
+Phần thưởng: {reward} coin
+""",reply_markup=markup)
 
-@bot.message_handler(content_types=['photo'])
-def photo(m):
+# gửi ảnh nhiệm vụ
+@bot.callback_query_handler(func=lambda call:call.data.startswith("task_"))
+def send_proof(call):
 
-    uid=m.from_user.id
+    tid=call.data.split("_")[1]
 
-    file_id=m.photo[-1].file_id
+    msg=bot.send_message(call.message.chat.id,"Gửi ảnh hoàn thành nhiệm vụ")
+    bot.register_next_step_handler(msg,receive_photo,tid)
 
-    bot.send_photo(
-        ADMIN_ID,
-        file_id,
-        caption=f"User {uid} gửi ảnh\n\n/ok_{uid} duyệt\n/no_{uid} từ chối"
-    )
+def receive_photo(message,tid):
 
-    bot.send_message(m.chat.id,"Đã gửi admin duyệt")
-
-@bot.message_handler(func=lambda m: m.text.startswith("/ok_"))
-def ok(m):
-
-    if m.from_user.id!=ADMIN_ID:
+    if not message.photo:
+        bot.send_message(message.chat.id,"Phải gửi ảnh")
         return
 
-    uid=m.text.split("_")[1]
+    uid=message.from_user.id
 
-    users[uid]["coin"]+=500
+    markup=types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("✅ Duyệt",callback_data=f"done_{uid}_{tid}"),
+        types.InlineKeyboardButton("❌ Từ chối",callback_data=f"reject_{uid}_{tid}")
+    )
 
-    save()
+    bot.send_photo(ADMIN_ID,message.photo[-1].file_id,
+    caption=f"user {uid} gửi nhiệm vụ {tid}",reply_markup=markup)
 
-    bot.send_message(uid,"Nhiệm vụ hoàn thành +500 xu")
+    bot.send_message(uid,"⏳ Đã gửi admin duyệt")
 
-@bot.message_handler(func=lambda m: m.text.startswith("/no_"))
-def no(m):
+# admin duyệt
+@bot.callback_query_handler(func=lambda call:call.data.startswith("done_"))
+def approve(call):
 
-    if m.from_user.id!=ADMIN_ID:
+    data=call.data.split("_")
+
+    uid=data[1]
+    tid=data[2]
+
+    reward=tasks[tid]["reward"]
+
+    users[str(uid)]["coin"]+=reward
+
+    save_users(users)
+
+    bot.send_message(uid,f"✅ Nhiệm vụ hoàn thành +{reward} coin")
+
+# tạo nhiệm vụ admin
+@bot.message_handler(commands=['taonhiemvu'])
+def create_task(message):
+
+    if message.from_user.id!=ADMIN_ID:
         return
 
-    uid=m.text.split("_")[1]
+    msg=bot.send_message(message.chat.id,"Nhập link nhiệm vụ")
+    bot.register_next_step_handler(msg,task_link)
 
-    bot.send_message(uid,"Ảnh không hợp lệ")
+def task_link(message):
+
+    link=message.text
+
+    msg=bot.send_message(message.chat.id,"Nhập thưởng coin")
+    bot.register_next_step_handler(msg,task_reward,link)
+
+def task_reward(message,link):
+
+    reward=int(message.text)
+
+    tid=str(len(tasks)+1)
+
+    tasks[tid]={
+        "link":link,
+        "reward":reward
+    }
+
+    save_tasks(tasks)
+
+    bot.send_message(message.chat.id,"✅ Đã tạo nhiệm vụ")
+
+# chống spam
+@bot.message_handler(content_types=['text'])
+def anti_spam(message):
+
+    uid=str(message.from_user.id)
+
+    now=time.time()
+
+    if now-users[uid]["last_task"]<5:
+        bot.send_message(uid,"⚠️ Spam quá nhanh")
+        return
+
+    users[uid]["last_task"]=now
+    save_users(users)
 
 bot.infinity_polling()
