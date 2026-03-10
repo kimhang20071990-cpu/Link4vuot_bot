@@ -3,8 +3,8 @@ import json
 import time
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-TOKEN = "BOT_TOKEN"
-ADMIN_ID = 123456789
+TOKEN = "8753063856:AAGI0AkzuHFUW_-fSg6pSXV0gUdI4Ktnzlo"
+ADMIN_ID = 8614970068
 
 bot = telebot.TeleBot(TOKEN)
 
