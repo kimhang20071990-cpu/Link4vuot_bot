@@ -39,6 +39,35 @@ tasks = load_tasks()
 def start(message):
 
     uid = str(message.from_user.id)
+    args = message.text.split()
+
+    if uid not in users:
+
+        users[uid] = {
+            "coin":0,
+            "last_task":0,
+            "ref":0
+        }
+
+        # kiểm tra có ref không
+        if len(args) > 1:
+            ref = args[1]
+
+            if ref in users and ref != uid:
+                users[ref]["coin"] += 400
+                users[ref]["ref"] += 1
+
+                bot.send_message(ref,"🎉 Bạn vừa nhận 400đ từ lượt mời")
+
+        save_users(users)
+
+    menu = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    menu.add("👤 Tài khoản","📋 Nhiệm vụ")
+    menu.add("👥 Giới thiệu","💸 Rút tiền")
+
+    bot.send_message(uid,"Chào mừng đến bot kiếm tiền",reply_markup=menu)
+
+    uid = str(message.from_user.id)
 
     if uid not in users:
         users[uid] = {
